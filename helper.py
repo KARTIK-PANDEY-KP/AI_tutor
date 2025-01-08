@@ -21,6 +21,7 @@ import time
 import jwt
 import base64
 import requests
+import ffmpeg
 
 def upload_to_the_vector_database(paths, model_name, max_tokens, dimensions):
     """
@@ -152,7 +153,7 @@ def upload_to_the_vector_database(paths, model_name, max_tokens, dimensions):
 ### seperator ###
 
 # Function to generate embeddings
-def generate_embedding(client, query):
+def generate_embedding(client, query, tokenizer_model_name):
     """
     Generates an embedding vector for a given query using the specified OpenAI embedding model.
 
@@ -182,12 +183,12 @@ def generate_embedding(client, query):
     """
     response = client.embeddings.create(
         input=query,
-        model="text-embedding-3-small"  # Replace with your desired model
+        model= tokenizer_model_name  # Replace with your desired model
     )
     return response.data[0].embedding
 
 # Function to retrieve context from Pinecone
-def retrieve_context(index, client, user_query):
+def retrieve_context(index, client, user_query, tokenizer_model_name):
     """
     Retrieves relevant context from the Pinecone vector database for a given user query.
 
@@ -228,7 +229,7 @@ def retrieve_context(index, client, user_query):
 
     """
     # Step 1: Generate embedding for the user query
-    query_vector = generate_embedding(client, user_query)
+    query_vector = generate_embedding(client, user_query, tokenizer_model_name)
     
     # Step 2: Query Pinecone for relevant matches
     response = index.query(
@@ -246,7 +247,7 @@ def retrieve_context(index, client, user_query):
     return context
 
 
-def generate_storyline(client, context, user_query, prompt_part_1, prompt_part_2):
+def generate_storyline(client, context, user_query, prompt_part_1, prompt_part_2, storyline_mode, storyline_temperature):
     """
     Generates a Pixar/Disney-style storyline with scenes based on the provided context.
     """
@@ -260,10 +261,10 @@ def generate_storyline(client, context, user_query, prompt_part_1, prompt_part_2
     # Make the API call
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",  # Updated to the best ChatGPT model
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=3000,
-            temperature=0.7,
+            model = storyline_model,  # Updated to the best ChatGPT model
+            messages = [{"role": "user", "content": prompt}],
+            max_tokens = 3000,
+            temperature = storyline_temperature,
         )
         # Parse and validate JSON response
         output = response.choices[0].message.content
@@ -274,7 +275,7 @@ def generate_storyline(client, context, user_query, prompt_part_1, prompt_part_2
         raise RuntimeError(f"Error generating storyline: {str(e)}")
 
 # Function to generate an alternative result for the user query
-def generate_alternative_result(client, context, user_query, prompt_part_1):
+def generate_alternative_result(client, context, user_query, prompt_part_1, explanation_model, explanation_temperature):
     """
     Retrieves context and generates an alternative result for the user query
     using a different temperature setting for diversity.
@@ -291,18 +292,18 @@ def generate_alternative_result(client, context, user_query, prompt_part_1):
     """
 
     # Generate a response using OpenAI
-    response = client.completions.create(
-        model="gpt-3.5-turbo-instruct",  # Use the appropriate model name
-        prompt=prompt,
-        max_tokens=3000,
-        temperature=1.0  # Higher temperature for diversity
-    )
+    response = client.chat.completions.create(
+            model = explanation_model,  # Updated to the best ChatGPT model
+            messages = [{"role": "user", "content": prompt}],
+            max_tokens = 3000,
+            temperature = explanation_temperature,
+        )
 
     return response.choices[0].text
 
 ### seperator ###
 
-def generate_textual_explanation_scenes_voiceovers(client, user_query, explanation_prompt, prompt_part_1, prompt_part_2):
+def generate_textual_explanation_scenes_voiceovers(client, user_query, explanation_prompt, prompt_part_1, prompt_part_2, storyline_model, explanation_model explanation_temperature, storyline_temperature, tokenizer_model_name):
     
     # Set up Pinecone client
     pinecone_client = Pinecone(
@@ -312,11 +313,11 @@ def generate_textual_explanation_scenes_voiceovers(client, user_query, explanati
     index = pinecone_client.Index(host = "https://test-gfkht3t.svc.aped-4627-b74a.pinecone.io")
     
     # Step 1: Retrieve context from Pinecone
-    context = retrieve_context(index, client, user_query)
+    context = retrieve_context(index, client, user_query, tokenizer_model_name)
 
     # Step 2: Generate storyline with scenes
-    storyline = generate_storyline(client, context, user_query, prompt_part_1, prompt_part_2)
-    alternative_result = generate_alternative_result(client, context, user_query, explanation_prompt)
+    storyline = generate_storyline(client, context, user_query, prompt_part_1, prompt_part_2, storyline_model, storyline_temperature)
+    alternative_result = generate_alternative_result(client, context, user_query, explanation_prompt, explanation_model, explanation_temperature)
 
     # Print the result
     print("STORYLINE AS FOLLOWS:\n", storyline)
@@ -324,7 +325,7 @@ def generate_textual_explanation_scenes_voiceovers(client, user_query, explanati
     
     return storyline, alternative_result
 
-def generate_video_url(image_base64, prompt):
+def generate_video_url(image_base64, prompt, kling_model):
     """
     Generate a video URL from an image file and a prompt.
 
@@ -349,7 +350,7 @@ def generate_video_url(image_base64, prompt):
 
     # API request payload
     payload = {
-        "model_name": "kling-v1",
+        "model_name": kling_model,
         "image": image_base64,
         "prompt": prompt,
         "mode": "std",
@@ -391,7 +392,7 @@ def generate_video_url(image_base64, prompt):
         # Wait before polling again
         time.sleep(10)
 
-def generate_pixar_image_base64(client, prompt):
+def generate_pixar_image_base64(client, prompt, image_generation_model):
     """
     Generates a Pixar-like animated image based on the given image description prompt using OpenAI's DALL·E model,
     and returns the image as a base64 string.
@@ -407,7 +408,7 @@ def generate_pixar_image_base64(client, prompt):
         response = client.images.generate(
             prompt=enhanced_prompt,
             n=1,
-            model = "dall-e-3",
+            model = image_generation_model,
             size="1024x1024",
             response_format="b64_json"  # Request base64 format
         )
@@ -421,7 +422,7 @@ def generate_pixar_image_base64(client, prompt):
         print(f"Error generating image: {e}")
         return None
 
-def process_scene(scene, client, image_description_prompt):
+def process_scene(scene, client, image_description_prompt, kling_model, image_generation_model):
     """
     Process a single scene: generate image description, create image, and get video URL.
     """
@@ -430,10 +431,10 @@ def process_scene(scene, client, image_description_prompt):
         image_description = f"{image_description_prompt}: {scene['image']} {scene['action']}"
         
         # Generate the image in base64 format
-        image_base64 = generate_pixar_image_base64(client, image_description)
+        image_base64 = generate_pixar_image_base64(client, image_description, image_generation_model)
 
         # Generate the video URL
-        video_url = generate_video_url(image_base64, scene["action"]) if image_base64 else None
+        video_url = generate_video_url(image_base64, scene["action"], kling_model) if image_base64 else None
 
         return {
             "scene_number": scene["scene_number"],
@@ -445,7 +446,7 @@ def process_scene(scene, client, image_description_prompt):
             "error": str(e)
         }
 
-def process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size=3):
+def process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size=3, kling_model, image_generation_model):
     """
     Process all scenes in parallel in batches of a specified size.
     """
@@ -462,7 +463,7 @@ def process_all_scenes_parallel(json_output, client, image_description_prompt, b
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # Submit all tasks in the current batch to the executor
             future_to_scene = {
-                executor.submit(process_scene, scene, client, image_description_prompt): scene["scene_number"]
+                executor.submit(process_scene, scene, client, image_description_prompt, kling_model, image_generation_model): scene["scene_number"]
                 for scene in batch
             }
 
@@ -482,3 +483,89 @@ def process_all_scenes_parallel(json_output, client, image_description_prompt, b
     # Sort results by scene_number to maintain order
     results.sort(key=lambda x: x["scene_number"])
     return results
+
+def process_and_merge_videos(json_file_path, final_output):
+    """
+    Process videos from JSON file, repeat them to match audio durations,
+    and merge them into one final video.
+    """
+    def download_file(url, output_path):
+        """Download a file from a URL and save it locally."""
+        response = requests.get(url, stream=True)
+        if response.status_code == 200:
+            with open(output_path, 'wb') as file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    file.write(chunk)
+            print(f"Downloaded: {output_path}")
+        else:
+            raise Exception(f"Failed to download {url}. Status code: {response.status_code}")
+
+    def repeat_video_to_audio(video_url, audio_path, output_path):
+        """Repeat video from URL to match audio duration."""
+        # Temporary file for downloaded video
+        video_temp_path = "temp_video.mp4"
+
+        # Download video from URL
+        download_file(video_url, video_temp_path)
+
+        # Get video and audio durations
+        video_info = ffmpeg.probe(video_temp_path)
+        audio_info = ffmpeg.probe(audio_path)
+
+        video_duration = float(video_info['streams'][0]['duration'])
+        audio_duration = float(audio_info['streams'][0]['duration'])
+
+        # Calculate repetitions
+        repetitions = int(audio_duration // video_duration) + 1
+
+        # Generate repeated video
+        repeated_video = f"{output_path}_repeated.mp4"
+        ffmpeg.input(video_temp_path, stream_loop=repetitions - 1).output(
+            repeated_video, t=audio_duration
+        ).run()
+
+        # Merge repeated video with audio
+        video_input = ffmpeg.input(repeated_video)  # Separate video input
+        audio_input = ffmpeg.input(audio_path)      # Separate audio input
+
+        ffmpeg.output(video_input, audio_input, output_path, vcodec="libx264", acodec="aac", strict="experimental").run()
+
+        # Clean up temporary files
+        os.remove(video_temp_path)
+        os.remove(repeated_video)
+        print(f"Final output saved: {output_path}")
+
+    def merge_videos(video_list, final_output):
+        """Merge videos into one final video."""
+        # Create a temporary text file listing the videos
+        with open("videos_to_merge.txt", "w") as f:
+            for video in video_list:
+                f.write(f"file '{video}'\n")
+
+        # Use FFmpeg to concatenate videos
+        ffmpeg.input("videos_to_merge.txt", format="concat", safe=0).output(
+            final_output, c="copy"
+        ).run()
+
+        # Clean up the temporary text file
+        os.remove("videos_to_merge.txt")
+        print(f"Merged video saved: {final_output}")
+
+    # Load JSON from a file
+    with open(json_file_path, 'r') as file:
+        all_results = json.load(file)
+
+    # Process each scene
+    output_videos = []
+    for scene in all_results:
+        scene_number = scene["scene_number"]
+        video_url = scene["video_url"]
+        audio_path = f"scene_{scene_number}.wav"  # Automatically generate audio path
+        output_path = f"scene_{scene_number}_output.mp4"
+        
+        print(f"Processing Scene {scene_number}...")
+        repeat_video_to_audio(video_url, audio_path, output_path)
+        output_videos.append(output_path)
+
+    # Merge all scene videos into one final video
+        merge_videos(output_videos, final_output)

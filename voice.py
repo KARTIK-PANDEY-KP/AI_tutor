@@ -19,7 +19,8 @@ from helper import (
     generate_pixar_image_base64,
     generate_video_url,
     process_all_scenes_parallel,
-    process_scene
+    process_scene,
+    process_and_merge_videos
 )
 from openai import OpenAI
 import base64
@@ -30,9 +31,16 @@ load_dotenv()
 
 # Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+tokenizer_model_name = "text-embedding-3-small"
 WS_URL = "wss://api.openai.com/v1/realtime"
+storyline_model = "gpt-4o"
+storyline_temperature = 0.7
+explanation_model = "gpt-4o"
+explanation_temperature = 1
 MODEL = "gpt-4o-realtime-preview-2024-10-01"
-AUDIO_FILENAME = "output.wav"
+image_generation_model = "dall-e-3"
+voice_mode = "sage"
+kling_model = "kling-v1"
 
 # Audio settings
 CHUNK = 1024
@@ -158,7 +166,7 @@ class RealtimeNarrationClient:
             "type": "session.update",
             "session": {
                 "modalities": ["text", "audio"],
-                "voice": "sage",
+                "voice": voice_mode,
                 "instructions": tone_description
             }
         }
@@ -176,7 +184,7 @@ class RealtimeNarrationClient:
         await self.send_event(event)
         await self.send_event({"type": "response.create"})
 
-    async def run(self, tone_description, exact_text):
+    async def run(self, tone_description, exact_text, voice_mode):
         await self.connect()
         receive_task = asyncio.create_task(self.receive_events())
         try:
@@ -198,7 +206,7 @@ class RealtimeNarrationClient:
                 pass
             await self.ws.close()
 
-async def process_scenes(json_scenes):
+async def process_scenes(json_scenes, voice_mode):
     for scene in json_scenes:
         try:
             tone_description = scene.get("voice__attribute", "Speak in a neutral tone.") + " You will repeat everything I say to you in this tone."
@@ -216,7 +224,7 @@ async def process_scenes(json_scenes):
             global AUDIO_FILENAME
             AUDIO_FILENAME = audio_filename
 
-            await client.run(tone_description, exact_text)
+            await client.run(tone_description, exact_text, voice_mode)
             logger.info(f"Audio for Scene {scene['scene_number']} saved as {audio_filename}")
         except Exception as e:
             logger.error(f"Error processing Scene {scene['scene_number']}: {e}")
@@ -225,7 +233,7 @@ async def main():
     # Replace 'your-api-key' with your actual OpenAI API key
     client = OpenAI()
 
-    storyline, textual_explanation = generate_textual_explanation_scenes_voiceovers(client, user_query, explanation_prompt, storyline_prompt_part_1, storyline_prompt_part_2)
+    storyline, textual_explanation = generate_textual_explanation_scenes_voiceovers(client, user_query, explanation_prompt, storyline_prompt_part_1, storyline_prompt_part_2, storyline_model, explanation_model, explanation_temperature, storyline_temperature, tokenizer_model_name)
 
     raw_output = storyline
     # Clean up potential code block markers like ```json
@@ -241,7 +249,7 @@ async def main():
         json_output = json.loads(cleaned_output)
 
     # Process all scenes in parallel with batching
-    all_results = process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size=batch_size)
+    all_results = process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size=batch_size, kling_model, image_generation_model)
     output_file = "all_results.json"
     with open(output_file, "w") as file:
         json.dump(all_results, file, indent=4)
@@ -254,7 +262,8 @@ async def main():
             print(f"Scene {result['scene_number']} failed: {result['error']}")
         else:
             print(f"Scene {result['scene_number']} Video URL: {result['video_url']}")
-    await process_scenes(json_output)
+    await process_scenes(json_output, voice_mode)
 
 if __name__ == "__main__":
     asyncio.run(main())
+    asyncio.run(process_and_merge_videos("all_results.json", "final_output.mp4"))
