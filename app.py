@@ -7,8 +7,9 @@ import subprocess
 app = Flask(__name__)
 
 # Directory for saving files
-UPLOAD_FOLDER = "uploads"
+UPLOAD_FOLDER = "./"
 CONFIG_FILE = "configurations.json"
+OUTLINE_FILE = "outline.json"
 
 # Ensure the upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -61,7 +62,7 @@ def upload_config():
 
     # Execute a separate Python file for processing
     try:
-        subprocess.run(["python", "process_task.py"], check=True)
+        subprocess.run(["python", "voice.py"], check=True)
         processing_state["is_processing"] = False
     except subprocess.CalledProcessError as e:
         processing_state["is_processing"] = False
@@ -73,9 +74,22 @@ def upload_config():
 def processing_status():
     # Check and return the processing status
     if processing_state["is_processing"]:
-        return jsonify({"status": False}), 200  # Still processing
+        return jsonify({"status": True}), 200  # Still processing
     else:
-        return jsonify({"status": True}), 200  # Processing complete
+        return jsonify({"status": False}), 200  # Processing complete
+
+@app.route('/read_outline', methods=['GET'])
+def read_outline():
+    outline_path = os.path.join(UPLOAD_FOLDER, OUTLINE_FILE)
+    if os.path.exists(outline_path):
+        try:
+            with open(outline_path, 'r') as f:
+                outline_data = json.load(f)
+            return jsonify(outline_data), 200
+        except Exception as e:
+            return jsonify({"error": "Failed to read outline file.", "details": str(e)}), 500
+    else:
+        return jsonify({"error": "Outline file not found."}), 404
 
 @app.route('/upload_pdf', methods=['POST'])
 def upload_pdf():

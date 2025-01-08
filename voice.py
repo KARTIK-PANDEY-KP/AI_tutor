@@ -205,6 +205,8 @@ async def main():
     client = OpenAI()
 
     storyline, textual_explanation = generate_textual_explanation_scenes_voiceovers(client, user_query, explanation_prompt, storyline_prompt_part_1, storyline_prompt_part_2, storyline_model, explanation_model, explanation_temperature, storyline_temperature, tokenizer_model_name)
+    with open("outline.json", 'w') as f:
+            json.dump({"storyline": storyline, "textual_explanation": textual_explanation}, f, indent=4)
 
     raw_output = storyline
     # Clean up potential code block markers like ```json
