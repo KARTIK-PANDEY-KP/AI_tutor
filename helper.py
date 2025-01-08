@@ -1,3 +1,5 @@
+import concurrent.futures
+from math import ceil
 import pyarrow.fs
 import sycamore
 import json
@@ -15,6 +17,10 @@ from sycamore.transforms.summarize_images import SummarizeImages
 from sycamore.context import ExecMode
 from pinecone import ServerlessSpec
 from openai import OpenAI
+import time
+import jwt
+import base64
+import requests
 
 def upload_to_the_vector_database(paths, model_name, max_tokens, dimensions):
     """
@@ -216,7 +222,7 @@ def retrieve_context(index, client, user_query):
 
     Workflow:
     ---------
-    1. Generate an embedding for the user query using the `generate_embedding` function.
+    1. Generate an embedding for the user query using the `generate_embeddinggenerate_embedding` function.
     2. Query the Pinecone index for the top-k matching chunks using the query embedding.
     3. Extract and concatenate relevant text metadata (`text_representation`) from the matches.
 
@@ -240,84 +246,48 @@ def retrieve_context(index, client, user_query):
     return context
 
 
-def generate_storyline(client, context, user_query):
+def generate_storyline(client, context, user_query, prompt_part_1, prompt_part_2):
     """
     Generates a Pixar/Disney-style storyline with scenes based on the provided context.
     """
-    
     prompt = f"""
-    **Generate a Pixar/Disney-style animated explanation for the concept: "{user_query}". Based on the following context only** 
+    **{prompt_part_1}: "{user_query}". Based on the following context only** 
     
     **Context**:
     {context}
     
-    **Storyline Requirements**:
-    1. **Story Environment**:
-       - Create visually engaging scenes with relevant backdrops that evolve logically with the storyline (e.g., classroom for introductions, whimsical spaces for imagination, futuristic labs for technical depth).
-       - The environment should complement and enhance the narrative, helping illustrate key ideas.
-
-    2. **Character Design**:
-       - Design relatable and lively characters (e.g., curious kids, a wise mentor, or anthropomorphic objects) that guide the viewer through the concept.
-       - Characters must interact dynamically with their surroundings and evolve naturally with the narrative.
-
-    3. **Actions and Visual Metaphors**:
-       - Characters actively demonstrate or interact with objects that represent parts of the concept (e.g., glowing nodes for connections, gears for processes, or animated charts for data).
-       - Incorporate playful and clear visual metaphors to simplify complex ideas.
-
-    4. **Tone and Mood**:
-       - Use vibrant colors, dynamic lighting, and playful animations to maintain an engaging and entertaining tone.
-       - Ensure that the tone is consistent, transitioning smoothly from scene to scene as the concept deepens.
-
-    5. **Voiceover Script**:
-       - Each scene includes a matching voiceover script:
-         - Explains the visuals in simple, engaging language.
-         - Uses analogies, humor, and storytelling to clarify and retain viewer interest.
-         - Concludes with an encouraging summary that ties all the concepts together.
-
-    **Output Format**:
-    Provide the output for each scene in the following structure AD ONLY PUTPUT THE JSON NO TEXT FOR PYTHON FORMATTING and only give JSON NO TEXT OTHER THAN SINGLE JSON FILE FOR ALL SCENES VERY IMPORTANT:
-    ```json
-    [{{
-      "scene_number": 1,
-      "image": "Describe the visual elements of the scene: environment, characters, and key props/objects in detail.",
-      "action": "Describe what is happening: how characters interact, how objects or visuals move, and how the concept is illustrated.",
-      "voiceover": "Provide a narration script that aligns with the visuals and explains the scene clearly and engagingly."
-    }}]
-    ```
-
-    **Tips**:
-    - Use visual metaphors like flowing rivers for data, glowing gears for systems, or a growing tree for organic processes.
-    - Add playful details (e.g., animated chalkboard doodles or talking objects) to make explanations lively.
-
-    Focus on creating a cohesive, fun, and informative narrative that would feel right at home in a Pixar or Disney short film.
-    """
-    # Generate response from OpenAI
-    response = client.completions.create(
-        model="gpt-3.5-turbo-instruct",  # Use the updated model name
-        prompt=prompt,
-        max_tokens=3000,
-        temperature=0.7
-    )
-    return response.choices[0].text 
+    {prompt_part_2}"""
+    # Make the API call
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",  # Updated to the best ChatGPT model
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=3000,
+            temperature=0.7,
+        )
+        # Parse and validate JSON response
+        output = response.choices[0].message.content
+        return output
+    except json.JSONDecodeError:
+        raise ValueError("The API response is not a valid JSON.")
+    except Exception as e:
+        raise RuntimeError(f"Error generating storyline: {str(e)}")
 
 # Function to generate an alternative result for the user query
-def generate_alternative_result(client, context, user_query):
+def generate_alternative_result(client, context, user_query, prompt_part_1):
     """
     Retrieves context and generates an alternative result for the user query
     using a different temperature setting for diversity.
     """
-
     # Create a prompt for generating an alternative result
     prompt = f"""
-    You are an educational assistant. Using the following context, answer the question in a concise, informative, and clear manner for a student.
+    {prompt_part_1}. Use the following context for answering"
 
     Context:
     {context}
 
     Question:
     {user_query}
-
-    Provide answer that is easy for a student to understand. Keep things short and simple, ensuring clarity.
     """
 
     # Generate a response using OpenAI
@@ -332,7 +302,7 @@ def generate_alternative_result(client, context, user_query):
 
 ### seperator ###
 
-def generate_textual_explanation_scenes_voiceovers(user_query):
+def generate_textual_explanation_scenes_voiceovers(client, user_query, explanation_prompt, prompt_part_1, prompt_part_2):
     
     # Set up Pinecone client
     pinecone_client = Pinecone(
@@ -340,17 +310,175 @@ def generate_textual_explanation_scenes_voiceovers(user_query):
     )
 
     index = pinecone_client.Index(host = "https://test-gfkht3t.svc.aped-4627-b74a.pinecone.io")
-    client = OpenAI()
     
     # Step 1: Retrieve context from Pinecone
     context = retrieve_context(index, client, user_query)
 
     # Step 2: Generate storyline with scenes
-    storyline = generate_storyline(client, context, user_query)
-    alternative_result = generate_alternative_result(client, context, user_query)
+    storyline = generate_storyline(client, context, user_query, prompt_part_1, prompt_part_2)
+    alternative_result = generate_alternative_result(client, context, user_query, explanation_prompt)
 
     # Print the result
     print("STORYLINE AS FOLLOWS:\n", storyline)
     print("\nTEXTUAL EXPLANATION AS FOLLOWS:\n", alternative_result)
     
     return storyline, alternative_result
+
+def generate_video_url(image_base64, prompt):
+    """
+    Generate a video URL from an image file and a prompt.
+
+    :param image_path: Path to the image file
+    :param prompt: Text prompt for video generation
+    :return: Video URL if available, or an error message
+    """
+    API_URL = "https://api.klingai.com/v1/videos/image2video"
+    # Generate JWT token
+    payload = {
+        "iss": os.getenv("KLING_ACCESS_KEY"),
+        "exp": int(time.time()) + 1800,  # Token expires in 30 minutes
+        "nbf": int(time.time()) - 5      # Token valid 5 seconds in the past
+    }
+    api_token = jwt.encode(payload, os.getenv("KLING_SECRET_KEY"), algorithm="HS256")
+
+    # API request headers
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json"
+    }
+
+    # API request payload
+    payload = {
+        "model_name": "kling-v1",
+        "image": image_base64,
+        "prompt": prompt,
+        "mode": "std",
+        "duration": "5",
+        "cfg_scale": 0.5
+    }
+
+    # Make the initial API call to generate the video
+    response = requests.post(API_URL, headers=headers, json=payload)
+
+    if response.status_code != 200:
+        return f"Error: {response.text}"
+
+    response_data = response.json()
+    task_id = response_data.get("data", {}).get("task_id")
+    if not task_id:
+        return "Error: Task ID not found in response"
+
+    # Poll the task status until the video is ready
+    task_status_url = f"{API_URL}/{task_id}"
+    while True:
+        status_response = requests.get(task_status_url, headers=headers)
+        if status_response.status_code != 200:
+            return f"Error: {status_response.text}"
+
+        status_data = status_response.json()
+        task_status = status_data.get("data", {}).get("task_status")
+
+        if task_status == "succeed":
+            videos = status_data.get("data", {}).get("task_result", {}).get("videos", [])
+            if videos:
+                return videos[0].get("url", "Video URL not found")
+            else:
+                return "Error: No videos found in task result"
+
+        elif task_status == "failed":
+            return "Error: Task failed to process"
+
+        # Wait before polling again
+        time.sleep(10)
+
+def generate_pixar_image_base64(client, prompt):
+    """
+    Generates a Pixar-like animated image based on the given image description prompt using OpenAI's DALL·E model,
+    and returns the image as a base64 string.
+
+    :param prompt: A string containing the image description.
+    :return: A base64-encoded string of the generated image.
+    """
+    try:
+        # Add specific Pixar-like animation style details to the prompt
+        enhanced_prompt = prompt
+        
+        # Call the DALL·E API to generate the image
+        response = client.images.generate(
+            prompt=enhanced_prompt,
+            n=1,
+            model = "dall-e-3",
+            size="1024x1024",
+            response_format="b64_json"  # Request base64 format
+        )
+        
+        # Access the base64 image data
+        image_base64 = response.data[0].b64_json
+        print("Image generated successfully.")
+        return image_base64
+
+    except Exception as e:
+        print(f"Error generating image: {e}")
+        return None
+
+def process_scene(scene, client, image_description_prompt):
+    """
+    Process a single scene: generate image description, create image, and get video URL.
+    """
+    try:
+        # Create the image description
+        image_description = f"{image_description_prompt}: {scene['image']} {scene['action']}"
+        
+        # Generate the image in base64 format
+        image_base64 = generate_pixar_image_base64(client, image_description)
+
+        # Generate the video URL
+        video_url = generate_video_url(image_base64, scene["action"]) if image_base64 else None
+
+        return {
+            "scene_number": scene["scene_number"],
+            "video_url": video_url
+        }
+    except Exception as e:
+        return {
+            "scene_number": scene["scene_number"],
+            "error": str(e)
+        }
+
+def process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size=3):
+    """
+    Process all scenes in parallel in batches of a specified size.
+    """
+    results = []
+    num_batches = ceil(len(json_output) / batch_size)
+
+    for batch_index in range(num_batches):
+        # Get the current batch of scenes
+        start_index = batch_index * batch_size
+        end_index = min(start_index + batch_size, len(json_output))
+        batch = json_output[start_index:end_index]
+
+        # Use ThreadPoolExecutor for parallel processing within the batch
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Submit all tasks in the current batch to the executor
+            future_to_scene = {
+                executor.submit(process_scene, scene, client, image_description_prompt): scene["scene_number"]
+                for scene in batch
+            }
+
+            # Collect the results as they complete
+            for future in concurrent.futures.as_completed(future_to_scene):
+                scene_number = future_to_scene[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    results.append({
+                        "scene_number": scene_number,
+                        "error": str(e)
+                    })
+        time.sleep(20)
+
+    # Sort results by scene_number to maintain order
+    results.sort(key=lambda x: x["scene_number"])
+    return results
