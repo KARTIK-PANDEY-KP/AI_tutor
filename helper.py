@@ -247,7 +247,7 @@ def retrieve_context(index, client, user_query, tokenizer_model_name):
     return context
 
 
-def generate_storyline(client, context, user_query, prompt_part_1, prompt_part_2, storyline_mode, storyline_temperature):
+def generate_storyline(client, context, user_query, prompt_part_1, prompt_part_2, storyline_model, storyline_temperature):
     """
     Generates a Pixar/Disney-style storyline with scenes based on the provided context.
     """
@@ -299,11 +299,11 @@ def generate_alternative_result(client, context, user_query, prompt_part_1, expl
             temperature = explanation_temperature,
         )
 
-    return response.choices[0].text
+    return response.choices[0].message.content
 
 ### seperator ###
 
-def generate_textual_explanation_scenes_voiceovers(client, user_query, explanation_prompt, prompt_part_1, prompt_part_2, storyline_model, explanation_model explanation_temperature, storyline_temperature, tokenizer_model_name):
+def generate_textual_explanation_scenes_voiceovers(client, user_query, explanation_prompt, prompt_part_1, prompt_part_2, storyline_model, explanation_model, explanation_temperature, storyline_temperature, tokenizer_model_name):
     
     # Set up Pinecone client
     pinecone_client = Pinecone(
@@ -446,7 +446,7 @@ def process_scene(scene, client, image_description_prompt, kling_model, image_ge
             "error": str(e)
         }
 
-def process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size=3, kling_model, image_generation_model):
+def process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size, kling_model, image_generation_model):
     """
     Process all scenes in parallel in batches of a specified size.
     """
@@ -484,7 +484,7 @@ def process_all_scenes_parallel(json_output, client, image_description_prompt, b
     results.sort(key=lambda x: x["scene_number"])
     return results
 
-def process_and_merge_videos(json_file_path, final_output):
+async def process_and_merge_videos(json_file_path, final_output):
     """
     Process videos from JSON file, repeat them to match audio durations,
     and merge them into one final video.
@@ -521,14 +521,14 @@ def process_and_merge_videos(json_file_path, final_output):
         # Generate repeated video
         repeated_video = f"{output_path}_repeated.mp4"
         ffmpeg.input(video_temp_path, stream_loop=repetitions - 1).output(
-            repeated_video, t=audio_duration
+            repeated_video, t=audio_duration, overwrite_output=True
         ).run()
 
         # Merge repeated video with audio
         video_input = ffmpeg.input(repeated_video)  # Separate video input
         audio_input = ffmpeg.input(audio_path)      # Separate audio input
 
-        ffmpeg.output(video_input, audio_input, output_path, vcodec="libx264", acodec="aac", strict="experimental").run()
+        ffmpeg.output(video_input, audio_input, output_path, vcodec="libx264", acodec="aac", strict="experimental", overwrite_output=True).run()
 
         # Clean up temporary files
         os.remove(video_temp_path)

@@ -28,76 +28,47 @@ import concurrent.futures
 from math import ceil
 # Load the .env file
 load_dotenv()
+# Reassign the loaded configurations back to the same variable name
+with open("configurations.json", "r") as json_file:
+    configurations = json.load(json_file)
 
 # Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-tokenizer_model_name = "text-embedding-3-small"
 WS_URL = "wss://api.openai.com/v1/realtime"
-storyline_model = "gpt-4o"
-storyline_temperature = 0.7
-explanation_model = "gpt-4o"
-explanation_temperature = 1
-MODEL = "gpt-4o-realtime-preview-2024-10-01"
-image_generation_model = "dall-e-3"
-voice_mode = "sage"
-kling_model = "kling-v1"
+# Replace the current variables with the loaded JSON data
+tokenizer_model_name = configurations["models"]["tokenizer_model_name"]
+storyline_model = configurations["models"]["storyline_model"]
+storyline_temperature = configurations["models"]["storyline_temperature"]
+explanation_model = configurations["models"]["explanation_model"]
+explanation_temperature = configurations["models"]["explanation_temperature"]
+MODEL = configurations["models"]["MODEL"]
+image_generation_model = configurations["models"]["image_generation_model"]
+voice_mode = configurations["models"]["voice_mode"]
+kling_model = configurations["models"]["kling_model"]
 
 # Audio settings
-CHUNK = 1024
-FORMAT = 2  # 2 bytes per sample (16-bit PCM)
-CHANNELS = 1
-RATE = 24000
+CHUNK = configurations["audio_settings"]["CHUNK"]
+FORMAT = configurations["audio_settings"]["FORMAT"]
+CHANNELS = configurations["audio_settings"]["CHANNELS"]
+RATE = configurations["audio_settings"]["RATE"]
+
 # Example Usage
-user_query = "explain model distillation mentioned in the paper"
-explanation_prompt = "You are an educational assistant. Using the following context, answer the question in a concise, informative, and clear manner for a student. Provide answer that is easy for a student to understand. Keep things short and simple, ensuring clarity."
-storyline_prompt_part_1 = "Generate a Pixar/Disney-style animated explanation for the concept"
-storyline_prompt_part_2 = """**Storyline Requirements**:
-    1. **Story Environment**:
-       - Create visually engaging scenes with relevant backdrops that evolve logically with the storyline.
-           - The motive is to have a story that is used to  explain the concepts//qqueries asked by the user. e.g. DO NOT rept this example take inspration from it "to explain addition" "story is a person bougtht two bananas then  someoone gave him one more banana now he has 3 bananas make it a stry and have voiceovers"
-       - The environment should complement and enhance the narrative, helping illustrate key ideas.
+user_query = configurations["example_usage"]["user_query"]
+explanation_prompt = configurations["example_usage"]["explanation_prompt"]
 
-        2. **Character Design**:
-       - Design relatable and lively characters (e.g., curious kids, a wise mentor, or anthropomorphic objects) that guide the viewer through the concept.
-       - Characters must interact dynamically with their surroundings and evolve naturally with the narrative.
+# Storyline prompts
+storyline_prompt_part_1 = configurations["storyline_prompt"]["part_1"]
+storyline_prompt_part_2 = configurations["storyline_prompt"]["part_2"]
 
-    3. **Actions and Visual Metaphors**:
-       - Characters actively demonstrate or interact with objects that represent parts of the concept (e.g., glowing nodes for connections, gears for processes, or animated charts for data).
-       - Incorporate playful and clear visual metaphors to simplify complex ideas.
+# Image description prompt
+image_description_prompt = configurations["image_description_prompt"]
 
-    4. **Tone and Mood**:
-       - Use vibrant colors, dynamic lighting, and playful animations to maintain an engaging and entertaining tone.
-       - Ensure that the tone is consistent, transitioning smoothly from scene to scene as the concept deepens.
+# Batch size
+batch_size = configurations["batch_size"]
 
-    5. **Voiceover Script**:
-       - Each scene includes a matching voiceover script:
-         - Explains the visuals in simple, engaging language.
-         - Uses analogies, humor, and storytelling to clarify and retain viewer interest.
-         - Concludes with an encouraging summary that ties all the concepts together.
+# Check variables
+print(tokenizer_model_name, storyline_model, storyline_temperature, explanation_model, explanation_temperature, MODEL, image_generation_model, voice_mode, kling_model, CHUNK, FORMAT, CHANNELS, RATE, user_query, explanation_prompt, storyline_prompt_part_1, storyline_prompt_part_2, image_description_prompt, batch_size)
 
-    **Output Format**:
-    Provide the output for each scene in the following structure AD ONLY PUTPUT THE JSON NO TEXT FOR PYTHON FORMATTING and only give JSON NO TEXT OTHER THAN SINGLE JSON FILE FOR ALL SCENES VERY IMPORTANT:
-    ```json
-    [{{
-      "scene_number": 1,
-      "image": "Describe the visual elements of the scene: environment, characters, and key props/objects in detail.",
-      "action": "Describe what is happening: how characters interact, how objects or visuals move, and how the concept is illustrated.",
-      "voiceover": "Provide a narration script that aligns with the visuals and explains the scene clearly and engagingly.",
-      "voice__attribute": "A single sentence describing how to speak, such as 'Speak in a calm and friendly tone, like a welcoming radio host. Add additional details as necessary to align with the scene.'"
-
-    }}]
-    ```
-
-    **Tips**:
-    - Use visual metaphors like flowing rivers for data, glowing gears for systems, or a growing tree for organic processes.
-    - Add playful details (e.g., animated chalkboard doodles or talking objects) to make explanations lively.
-    - Whatever object is present in the action shoud have all its characteristics defined in the image, good to make the image as descriptive as possible
-    Focus on creating a cohesive, fun, and informative narrative that would feel right at home in a Pixar or Disney short film.
-    """
-
-image_description_prompt = "make a Pixar like animated photo for the following image description"
-
-batch_size = 3
 
 # Logging setup
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -249,7 +220,7 @@ async def main():
         json_output = json.loads(cleaned_output)
 
     # Process all scenes in parallel with batching
-    all_results = process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size=batch_size, kling_model, image_generation_model)
+    all_results = process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size, kling_model, image_generation_model)
     output_file = "all_results.json"
     with open(output_file, "w") as file:
         json.dump(all_results, file, indent=4)
@@ -263,7 +234,8 @@ async def main():
         else:
             print(f"Scene {result['scene_number']} Video URL: {result['video_url']}")
     await process_scenes(json_output, voice_mode)
+    await process_and_merge_videos("all_results.json", "final_output.mp4")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
-    asyncio.run(process_and_merge_videos("all_results.json", "final_output.mp4"))

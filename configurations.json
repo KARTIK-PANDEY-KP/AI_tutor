@@ -1,0 +1,29 @@
+{
+    "models": {
+        "tokenizer_model_name": "text-embedding-3-small",
+        "storyline_model": "gpt-4o",
+        "storyline_temperature": 0.7,
+        "explanation_model": "gpt-4o",
+        "explanation_temperature": 1,
+        "MODEL": "gpt-4o-realtime-preview-2024-10-01",
+        "image_generation_model": "dall-e-3",
+        "voice_mode": "sage",
+        "kling_model": "kling-v1"
+    },
+    "audio_settings": {
+        "CHUNK": 1024,
+        "FORMAT": 2,
+        "CHANNELS": 1,
+        "RATE": 24000
+    },
+    "example_usage": {
+        "user_query": "explain model distillation mentioned in the paper",
+        "explanation_prompt": "You are an educational assistant. Using the following context, answer the question in a concise, informative, and clear manner for a student. Provide answer that is easy for a student to understand. Keep things short and simple, ensuring clarity."
+    },
+    "storyline_prompt": {
+        "part_1": "Generate a Pixar/Disney-style animated explanation for the concept",
+        "part_2": "**Storyline Requirements**:\n    1. **Story Environment**:\n       - Create visually engaging scenes with relevant backdrops that evolve logically with the storyline.\n           - The motive is to have a story that is used to  explain the concepts//qqueries asked by the user. e.g. DO NOT rept this example take inspration from it \"to explain addition\" \"story is a person bougtht two bananas then  someoone gave him one more banana now he has 3 bananas make it a stry and have voiceovers\"\n       - The environment should complement and enhance the narrative, helping illustrate key ideas.\n\n        2. **Character Design**:\n       - Design relatable and lively characters (e.g., curious kids, a wise mentor, or anthropomorphic objects) that guide the viewer through the concept.\n       - Characters must interact dynamically with their surroundings and evolve naturally with the narrative.\n\n    3. **Actions and Visual Metaphors**:\n       - Characters actively demonstrate or interact with objects that represent parts of the concept (e.g., glowing nodes for connections, gears for processes, or animated charts for data).\n       - Incorporate playful and clear visual metaphors to simplify complex ideas.\n\n    4. **Tone and Mood**:\n       - Use vibrant colors, dynamic lighting, and playful animations to maintain an engaging and entertaining tone.\n       - Ensure that the tone is consistent, transitioning smoothly from scene to scene as the concept deepens.\n\n    5. **Voiceover Script**:\n       - Each scene includes a matching voiceover script:\n         - Explains the visuals in simple, engaging language.\n         - Uses analogies, humor, and storytelling to clarify and retain viewer interest.\n         - Concludes with an encouraging summary that ties all the concepts together.\n\n    **Output Format**:\n    Provide the output for each scene in the following structure AD ONLY PUTPUT THE JSON NO TEXT FOR PYTHON FORMATTING and only give JSON NO TEXT OTHER THAN SINGLE JSON FILE FOR ALL SCENES VERY IMPORTANT:\n    ```json\n    [{{\n      \"scene_number\": 1,\n      \"image\": \"Describe the visual elements of the scene: environment, characters, and key props/objects in detail.\",\n      \"action\": \"Describe what is happening: how characters interact, how objects or visuals move, and how the concept is illustrated.\",\n      \"voiceover\": \"Provide a narration script that aligns with the visuals and explains the scene clearly and engagingly.\",\n      \"voice__attribute\": \"A single sentence describing how to speak, such as 'Speak in a calm and friendly tone, like a welcoming radio host. Add additional details as necessary to align with the scene.'\"\n\n    }}]\n    ```\n\n    **Tips**:\n    - Use visual metaphors like flowing rivers for data, glowing gears for systems, or a growing tree for organic processes.\n    - Add playful details (e.g., animated chalkboard doodles or talking objects) to make explanations lively.\n    - Whatever object is present in the action shoud have all its characteristics defined in the image, good to make the image as descriptive as possible\n    Focus on creating a cohesive, fun, and informative narrative that would feel right at home in a Pixar or Disney short film.\n        "
+    },
+    "image_description_prompt": "make a Pixar like animated photo for the following image description",
+    "batch_size": 3
+}
