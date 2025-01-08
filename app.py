@@ -3,6 +3,8 @@ import os
 from werkzeug.utils import secure_filename
 import json
 import subprocess
+import glob
+
 
 app = Flask(__name__)
 
@@ -20,22 +22,26 @@ processing_state = {"is_processing": False}
 
 def delete_files():
     # List of files to delete
-    files_to_delete = [
-        "scene_1.wav",
-        "scene_1_output.mp4",
-        "scene_2.wav",
-        "scene_2_output.mp4",
-        "scene_3.wav",
-        "scene_3_output.mp4",
-        "scene_4.wav",
-        "scene_4_output.mp4",
+    import glob
+
+    # Define file patterns to delete
+    file_patterns = [
+        "scene_*.wav",
+        "scene_*.mp4",
         "final_output.mp4"
     ]
 
-    for filename in files_to_delete:
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    # Iterate over file patterns and delete matching files
+    for pattern in file_patterns:
+        for file_path in glob.glob(pattern):  # Match files using the pattern
+            try:
+                os.remove(file_path)
+                print(f"Deleted: {file_path}")
+            except FileNotFoundError:
+                print(f"File not found (skipping): {file_path}")
+            except Exception as e:
+                print(f"Error deleting file {file_path}: {e}")
+
 
 @app.route('/upload_config', methods=['POST'])
 def upload_config():
@@ -55,7 +61,7 @@ def upload_config():
         json.dump(config_data, f, indent=4)
 
     # Delete specified files
-    delete_files()
+#     delete_files()
 
     # Mark as processing
     processing_state["is_processing"] = True

@@ -521,14 +521,14 @@ async def process_and_merge_videos(json_file_path, final_output):
         # Generate repeated video
         repeated_video = f"{output_path}_repeated.mp4"
         ffmpeg.input(video_temp_path, stream_loop=repetitions - 1).output(
-            repeated_video, t=audio_duration, overwrite_output=True
-        ).run()
+            repeated_video, t=audio_duration
+        ).run(overwrite_output = True)
 
         # Merge repeated video with audio
         video_input = ffmpeg.input(repeated_video)  # Separate video input
         audio_input = ffmpeg.input(audio_path)      # Separate audio input
 
-        ffmpeg.output(video_input, audio_input, output_path, vcodec="libx264", acodec="aac", strict="experimental", overwrite_output=True).run()
+        ffmpeg.output(video_input, audio_input, output_path, vcodec="libx264", acodec="aac", strict="experimental").run(overwrite_output = True)
 
         # Clean up temporary files
         os.remove(video_temp_path)
@@ -545,7 +545,7 @@ async def process_and_merge_videos(json_file_path, final_output):
         # Use FFmpeg to concatenate videos
         ffmpeg.input("videos_to_merge.txt", format="concat", safe=0).output(
             final_output, c="copy"
-        ).run()
+        ).run(overwrite_output = True)
 
         # Clean up the temporary text file
         os.remove("videos_to_merge.txt")
