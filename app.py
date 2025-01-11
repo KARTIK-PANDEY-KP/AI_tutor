@@ -4,6 +4,8 @@ from werkzeug.utils import secure_filename
 import json
 import subprocess
 import glob
+from helper import semantic_parts
+from openai import OpenAI
 
 
 app = Flask(__name__)
@@ -117,6 +119,35 @@ def complete_processing():
     global processing_state
     processing_state["is_processing"] = False
     return jsonify({"message": "Processing marked as complete."}), 200
+
+@app.route('/semantic_parts', methods=['POST'])
+def semantic_parts_endpoint():
+    """
+    Endpoint to process only 'user_query' using the `semantic_parts` function.
+    """
+    try:
+        # Get the JSON payload from the user
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON payload provided."}), 400
+
+        # Extract 'user_query'
+        user_query = data.get("user_query")
+        if not user_query:
+            return jsonify({"error": "'user_query' is required."}), 400
+
+        # Process the 'user_query' (example usage with the semantic_parts function)
+        # For this simplified example, let's assume other inputs are fixed.
+        response = semantic_parts(
+            client=OpenAI(),  # Replace with your client object
+            prompt_textual=user_query,  # Using 'user_query' directly as the prompt
+        )
+
+        # Return the generated response
+        return jsonify({"response": response}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

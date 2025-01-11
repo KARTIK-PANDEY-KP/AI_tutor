@@ -569,3 +569,51 @@ async def process_and_merge_videos(json_file_path, final_output):
 
     # Merge all scene videos into one final video
         merge_videos(output_videos, final_output)
+        
+def semantic_parts(client, prompt_textual, semantic_seg_model = "gpt-4o", semantic_seg_temperature = 1):
+    """
+    Retrieves context and generates an alternative result for the user query
+    using a different temperature setting for diversity.
+
+    Parameters:
+        client (object): The API client to generate responses (e.g., OpenAI client).
+        context (str): Additional context that might be used for processing.
+        user_query (str): The user's query or input.
+        prompt_textual (str): The text input for generating the prompt.
+        explanation_model (str): The model used for generating explanations.
+        explanation_temperature (float): The temperature setting for response generation.
+
+    Returns:
+        str: The generated alternative response in JSON format.
+    """
+
+    # Create a prompt for generating an alternative result
+    prompt = f"""
+    Break down the given text thesis into 4-6 key concepts that can be queried into an academic database: like the following:
+    The output should be in JSON format strictly and only output the points, not any explanation or other texts.
+    A sample thesis is what the user sends:
+    "The increasing prevalence of low-frequency urban noise pollution, particularly from HVAC systems and construction equipment, creates persistent cognitive strain that manifests not only in immediate stress responses but also in subtle long-term changes to residents' decision-making patterns and risk assessment capabilities, suggesting that urban planning must expand beyond traditional decibel-level regulations to account for the specific cognitive impacts of different sound frequencies."
+    
+    And the output should look like this:
+    {{
+      "main_concepts": [
+        "Low-frequency noise",
+        "Cognitive strain",
+        "Regulation limitations",
+        "Urban planning"
+      ]
+    }}
+
+    User prompt:
+    {prompt_textual}
+    """
+
+    # Generate a response using the client
+    response = client.chat.completions.create(
+        model=semantic_seg_model,  # Specify the model for response generation
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=3000,
+        temperature=semantic_seg_temperature,
+    )
+
+    return response.choices[0].message.content

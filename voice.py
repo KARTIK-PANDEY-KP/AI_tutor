@@ -202,40 +202,40 @@ async def process_scenes(json_scenes, voice_mode):
 
 async def main():
     # Replace 'your-api-key' with your actual OpenAI API key
-#     client = OpenAI()
+    client = OpenAI()
 
-#     storyline, textual_explanation = generate_textual_explanation_scenes_voiceovers(client, user_query, explanation_prompt, storyline_prompt_part_1, storyline_prompt_part_2, storyline_model, explanation_model, explanation_temperature, storyline_temperature, tokenizer_model_name)
-#     with open("outline.json", 'w') as f:
-#             json.dump({"storyline": storyline, "textual_explanation": textual_explanation}, f, indent=4)
+    storyline, textual_explanation = generate_textual_explanation_scenes_voiceovers(client, user_query, explanation_prompt, storyline_prompt_part_1, storyline_prompt_part_2, storyline_model, explanation_model, explanation_temperature, storyline_temperature, tokenizer_model_name)
+    with open("outline.json", 'w') as f:
+            json.dump({"storyline": storyline, "textual_explanation": textual_explanation}, f, indent=4)
 
-#     raw_output = storyline
-#     # Clean up potential code block markers like ```json
-#     if raw_output.startswith("```json"):
-#         raw_output = raw_output.strip("```json").strip("```")
+    raw_output = storyline
+    # Clean up potential code block markers like ```json
+    if raw_output.startswith("```json"):
+        raw_output = raw_output.strip("```json").strip("```")
 
-#     # Parse JSON content
-#     try:
-#         json_output = json.loads(raw_output)
-#     except json.JSONDecodeError:
-#         # Fallback if minor formatting issues exist
-#         cleaned_output = raw_output.replace("\n", "").strip()
-#         json_output = json.loads(cleaned_output)
+    # Parse JSON content
+    try:
+        json_output = json.loads(raw_output)
+    except json.JSONDecodeError:
+        # Fallback if minor formatting issues exist
+        cleaned_output = raw_output.replace("\n", "").strip()
+        json_output = json.loads(cleaned_output)
 
-#     # Process all scenes in parallel with batching
-#     all_results = process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size, kling_model, image_generation_model)
-#     output_file = "all_results.json"
-#     with open(output_file, "w") as file:
-#         json.dump(all_results, file, indent=4)
-#     print(f"Results saved to {output_file}")
+    # Process all scenes in parallel with batching
+    all_results = process_all_scenes_parallel(json_output, client, image_description_prompt, batch_size, kling_model, image_generation_model)
+    output_file = "all_results.json"
+    with open(output_file, "w") as file:
+        json.dump(all_results, file, indent=4)
+    print(f"Results saved to {output_file}")
 
 
-#     # Print results
-#     for result in all_results:
-#         if "error" in result:
-#             print(f"Scene {result['scene_number']} failed: {result['error']}")
-#         else:
-#             print(f"Scene {result['scene_number']} Video URL: {result['video_url']}")
-#     await process_scenes(json_output, voice_mode)
+    # Print results
+    for result in all_results:
+        if "error" in result:
+            print(f"Scene {result['scene_number']} failed: {result['error']}")
+        else:
+            print(f"Scene {result['scene_number']} Video URL: {result['video_url']}")
+    await process_scenes(json_output, voice_mode)
     await process_and_merge_videos("all_results.json", "final_output.mp4")
 
 
