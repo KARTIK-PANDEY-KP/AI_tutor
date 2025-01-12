@@ -22,6 +22,10 @@ import jwt
 import base64
 import requests
 import ffmpeg
+import PyPDF2
+import pandas as pd
+import matplotlib.pyplot as plt
+import json
 
 def upload_to_the_vector_database(paths, model_name, max_tokens, dimensions):
     """
@@ -89,7 +93,7 @@ def upload_to_the_vector_database(paths, model_name, max_tokens, dimensions):
 
     # Initialize the tokenizer
     tokenizer = OpenAITokenizer(model_name)
-
+    
     ds = (
         ctx.read.binary(paths, binary_format="pdf")
         # Partition and extract tables and images
@@ -230,11 +234,11 @@ def retrieve_context(index, client, user_query, tokenizer_model_name):
     """
     # Step 1: Generate embedding for the user query
     query_vector = generate_embedding(client, user_query, tokenizer_model_name)
-    
+
     # Step 2: Query Pinecone for relevant matches
     response = index.query(
         vector=query_vector,
-        top_k=6,
+        top_k=10,
         include_metadata=True
     )
 
@@ -309,8 +313,11 @@ def generate_textual_explanation_scenes_voiceovers(client, user_query, explanati
     pinecone_client = Pinecone(
         api_key=os.getenv("PINECONE_API_KEY")
     )
+#     pinecone_client.delete_index("test")
 
     index = pinecone_client.Index(host = "https://test-gfkht3t.svc.aped-4627-b74a.pinecone.io")
+#     index.delete(delete_all=True)
+
     
     # Step 1: Retrieve context from Pinecone
     context = retrieve_context(index, client, user_query, tokenizer_model_name)
@@ -891,3 +898,114 @@ def upload_to_the_vector_database_ss(paths, model_name, max_tokens, dimensions):
                     VALUES ({i}, {embedding}, {path}, {filetype}, {text})
                 """)
             conn.commit()
+
+def extract_text_from_pdf(pdf_path):
+    """
+    Extract text from a PDF file using PyPDF2.
+    """
+    with open(pdf_path, 'rb') as pdf_file:
+        reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text()
+    return text
+
+
+def extract_data_with_gpt(text, prompt_template, model="gpt-4o"):
+    """
+    Use GPT-4 to extract data or summaries from the given text.
+    """
+    prompt = prompt_template.format(text=text)
+    client = OpenAI()
+    try:
+        # Call the OpenAI Chat API
+        response =  client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=3000,
+            temperature=0
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        raise RuntimeError(f"Error during GPT API call: {e}")
+
+
+def visualize_data(data, output_path="graph.png"):
+    """
+    Visualize the extracted data using a bar chart and save the chart as an image.
+    """
+    try:
+        df = pd.DataFrame(data)
+        plt.figure(figsize=(8, 6))
+        plt.bar(df['Category'], df['Value'], color='skyblue')
+        plt.title('Data Visualization', fontsize=14)
+        plt.xlabel('Category', fontsize=12)
+        plt.ylabel('Value', fontsize=12)
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.xticks(rotation=90, ha='right', fontsize=8)  # Rotate x-axis labels
+        plt.tight_layout()  # Adjust layout to prevent clipping
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"Bar chart saved as {output_path}")
+    except KeyError as e:
+        raise ValueError(f"Missing expected key in data: {e}")
+
+def encode_image_to_base64(image_path):
+    """
+    Encode an image file to a Base64 string.
+    """
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+def process_pdf(pdf_path):
+    """
+    Process the PDF to extract text, generate a summary, and save a bar chart visualization.
+    """
+    # Extract text from the PDF
+    pdf_text = extract_text_from_pdf(pdf_path)
+
+    # Define prompts
+    summary_prompt_template = """
+    Summarize the following paper text into a concise, coherent summary. Focus on the main points, findings, or arguments.
+
+    Paper Text:
+    {text}
+    """
+
+    data_prompt_template = """
+    Analyze the following paper text and identify any numerical data or trends that can be represented in tabular form. 
+    Generate the data in JSON format with the following structure:
+    [
+      {{"Category": "Category Name", "Value": Numerical Value}},
+      {{"Category": "Category Name", "Value": Numerical Value}}
+    ]
+
+    Ensure the output is valid JSON. Do not include any text, only JSON, nothing else at all.
+    Paper Text:
+    {text}
+    """
+
+    # Generate summary
+    summary = extract_data_with_gpt(pdf_text, summary_prompt_template)
+    print("Summary of the PDF:\n", summary)
+
+    # Extract numerical data
+    extracted_data = extract_data_with_gpt(pdf_text, data_prompt_template)
+
+    # Clean up and parse the JSON output
+    raw_output = extracted_data.strip()
+    if raw_output.startswith("```json"):
+        raw_output = raw_output.strip("```json").strip("```")
+
+    try:
+        data = json.loads(raw_output)
+        print("Extracted Data:", data)
+    except json.JSONDecodeError:
+        cleaned_output = raw_output.replace("\n", "").strip()
+        data = json.loads(cleaned_output)
+
+    # Save visualization
+    visualize_data(data, output_path="graph.png")
+    image_base64 = encode_image_to_base64("graph.png")
+
+    # Return the summary
+    return summary, image_base64

@@ -21,3 +21,4 @@ sudo apt install zip tmux
 pip install sycamore-ai[pinecone]
 sudo apt-get install poppler-utils
 pip install "sycamore-ai[local-inference]"
+pip install PyPDF2

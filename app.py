@@ -4,8 +4,12 @@ from werkzeug.utils import secure_filename
 import json
 import subprocess
 import glob
-from helper import semantic_parts
+from helper import semantic_parts, process_pdf
 from openai import OpenAI
+from helper import upload_to_the_vector_database
+from time import sleep
+from pinecone import Pinecone
+
 
 
 app = Flask(__name__)
@@ -149,6 +153,112 @@ def semantic_parts_endpoint():
     except Exception as e:
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
+#new
+@app.route('/upload_pdf_get_sum', methods=['POST'])
+def upload_pdf_get_sum():
+    # Accept a PDF file
+    pdf_file = request.files.get('pdf')
+    if pdf_file:
+        # Save the file
+        pdf_filename = secure_filename(pdf_file.filename)
+        pdf_path = os.path.join(UPLOAD_FOLDER, pdf_filename)
+        pdf_file.save(pdf_path)
+
+        # Set the embedding model and its parameters
+        model_name = "text-embedding-3-small"
+        max_tokens = 8191
+        dimensions = 1536
+
+        # I think it uploads to the vectorDB, NOT SURE IF IT APPEND THE DATA OR OVERWRITES THE EXISTING DATA
+        ret = upload_to_the_vector_database(pdf_path, model_name, max_tokens, dimensions)
+        print("------ UPLOADED -----------")
+        sleep(20)
+        process_pdf
+        print("------ DELETED -----------")
+
+        # Set up Pinecone client
+        pinecone_client = Pinecone(
+            api_key=os.getenv("PINECONE_API_KEY")
+        )
+    #     pinecone_client.delete_index("test")
+
+        index = pinecone_client.Index(host = "https://test-gfkht3t.svc.aped-4627-b74a.pinecone.io")
+    #     index.delete(delete_all=True)
+        index.delete(delete_all=True)
+        
+        if os.path.exists(pdf_path):
+            try:
+                os.remove(pdf_path)  # Delete the file
+                print(f"{pdf_path} has been deleted successfully.")
+            except Exception as e:
+                print(f"An error occurred: {e}")
+        else:
+             print(f"{pdf_path} does not exist.")
+    
+        return jsonify({"message": "PDF uploaded successfully."}), 200
+    
+    else:
+        
+        index.delete(delete_all=True)
+            
+        if os.path.exists(pdf_path):
+            try:
+                os.remove(pdf_path)  # Delete the file
+                print(f"{pdf_path} has been deleted successfully.")
+            except Exception as e:
+                print(f"An error occurred: {e}")
+        else:
+             print(f"{pdf_path} does not exist.")
+
+        return jsonify({"message": "PDF uploaded successfully."}), 200
+            
+        return jsonify({"error": "No PDF file provided."}), 400
+    
+@app.route('/upload_pdf_get_sum_graph', methods=['POST'])
+def upload_pdf_get_sum_graph():
+    # Accept a PDF file
+    pdf_file = request.files.get('pdf')
+    if pdf_file:
+        # Save the file
+        pdf_filename = secure_filename(pdf_file.filename)
+        pdf_path = os.path.join(UPLOAD_FOLDER, pdf_filename)
+        pdf_file.save(pdf_path)
+        print("------ SAVED PDF -----------")
+#         sleep(20)
+        summary, image_base64 = process_pdf(pdf_path)
+        print("------ PROCESSED PDF -----------")
+        
+        if os.path.exists(pdf_path):
+            try:
+                os.remove(pdf_path)  # Delete the file
+                print(f"{pdf_path} has been deleted successfully.")
+            except Exception as e:
+                print(f"An error occurred: {e}")
+        else:
+             print(f"{pdf_path} does not exist.")
+    
+        # Return the summary and Base64-encoded graph image
+        return jsonify({
+            "message": "PDF processed successfully.",
+            "summary": summary,
+            "graph": image_base64
+        }), 200
+    
+    else:            
+        if os.path.exists(pdf_path):
+            try:
+                os.remove(pdf_path)  # Delete the file
+                print(f"{pdf_path} has been deleted successfully.")
+            except Exception as e:
+                print(f"An error occurred: {e}")
+        else:
+             print(f"{pdf_path} does not exist.")
+
+        return jsonify({"message": "PDF uploaded successfully."}), 200
+            
+        return jsonify({"error": "No PDF file provided."}), 400
+        
+        
 if __name__ == '__main__':
     app.run(debug=True)
 

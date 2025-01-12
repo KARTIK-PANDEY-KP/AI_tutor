@@ -17,7 +17,7 @@
         "RATE": 24000
     },
     "example_usage": {
-        "user_query": "explain model distillation mentioned in the paper",
+        "user_query": "explain the abstract of the paper",
         "explanation_prompt": "You are an educational assistant. Using the following context, answer the question in a concise, informative, and clear manner for a student. Provide answer that is easy for a student to understand. Keep things short and simple, ensuring clarity."
     },
     "storyline_prompt": {
