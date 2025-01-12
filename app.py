@@ -4,16 +4,15 @@ from werkzeug.utils import secure_filename
 import json
 import subprocess
 import glob
-from helper import semantic_parts, process_pdf
+from helper import semantic_parts, process_pdf, retrieve_context
 from openai import OpenAI
 from helper import upload_to_the_vector_database
 from time import sleep
 from pinecone import Pinecone
 
-
-
 app = Flask(__name__)
-
+app.secret_key = "jinga lala huhu"
+sessiono = {}
 # Directory for saving files
 UPLOAD_FOLDER = "./"
 CONFIG_FILE = "configurations.json"
@@ -113,9 +112,58 @@ def upload_pdf():
         pdf_path = os.path.join(UPLOAD_FOLDER, pdf_filename)
         pdf_file.save(pdf_path)
 
+        # Set the embedding model and its parameters
+        model_name = "text-embedding-3-small"
+        max_tokens = 8191
+        dimensions = 1536
+
+        # I think it uploads to the vectorDB, NOT SURE IF IT APPEND THE DATA OR OVERWRITES THE EXISTING DATA
+        ret = upload_to_the_vector_database(pdf_path, model_name, max_tokens, dimensions, index_name_param = "chatbot")
+        print("------ UPLOADED -----------")
+        sleep(20)
+        print("------ DELETED -----------")
+
+        if os.path.exists(pdf_path):
+            try:
+                os.remove(pdf_path)  # Delete the file
+                print(f"{pdf_path} has been deleted successfully.")
+            except Exception as e:
+                print(f"An error occurred: {e}")
+        else:
+             print(f"{pdf_path} does not exist.")
+    
         return jsonify({"message": "PDF uploaded successfully."}), 200
+    
     else:
+        if os.path.exists(pdf_path):
+            try:
+                os.remove(pdf_path)  # Delete the file
+                print(f"{pdf_path} has been deleted successfully.")
+            except Exception as e:
+                print(f"An error occurred: {e}")
+        else:
+             print(f"{pdf_path} does not exist.")
+            
         return jsonify({"error": "No PDF file provided."}), 400
+
+@app.route('/delete_index', methods=['POST'])
+def delete_pinecone_index():
+    """
+    Endpoint to delete a Pinecone index or all data within it.
+    """
+    # Set up Pinecone client
+    pinecone_client = Pinecone(
+        api_key=os.getenv("PINECONE_API_KEY")
+    )
+    #     pinecone_client.delete_index("test")
+
+    index = pinecone_client.Index(host = "https://chatbot-gfkht3t.svc.aped-4627-b74a.pinecone.io")
+#     index.delete(delete_all=True)
+    index.delete(delete_all=True)
+
+    # Delete the entire index
+#     pinecone.delete_index(index_name)
+    return jsonify({"message": f"Index chatbot' has been deleted successfully."}), 200
 
 # Simulate processing completion (for testing purposes)
 @app.route('/complete_processing', methods=['POST'])
@@ -258,7 +306,86 @@ def upload_pdf_get_sum_graph():
             
         return jsonify({"error": "No PDF file provided."}), 400
         
-        
+
+# Helper function for chatbot
+def chatbot_with_memory(prompt_textual, semantic_seg_model="gpt-4o", semantic_seg_temperature=1):
+    """
+    Generate a response from OpenAI and include historical context.
+    """
+    # Set up Pinecone client
+    pinecone_client = Pinecone(
+        api_key=os.getenv("PINECONE_API_KEY")
+    )
+    #     pinecone_client.delete_index("test")
+
+    index = pinecone_client.Index(host = "https://chatbot-gfkht3t.svc.aped-4627-b74a.pinecone.io")
+    client = OpenAI()
+
+    context = retrieve_context(index, client, prompt_textual, tokenizer_model_name = "text-embedding-3-small")
+    # Retrieve history from session or initialize it
+    user_history = sessiono.get("history", [])
+    
+    # Create a prompt that includes history
+    history_prompt = "\n".join([json.dumps(interaction) for interaction in user_history])
+    full_prompt = f"""
+    Context from previous interactions:
+    {history_prompt}
+    
+    Context from vector database for the user_prompt:
+    {context}
+    
+    Current User Prompt:
+    {prompt_textual}
+    
+    Act as a chatbot and answer the question(s) asked by the user in user promp based on the previous interactions and the  context from the vector database for the user prompt.
+    """
+    # Generate response using OpenAI
+    response = client.chat.completions.create(
+        model=semantic_seg_model,
+        messages=[{"role": "user", "content": full_prompt}],
+        max_tokens=3000,
+        temperature=semantic_seg_temperature,
+    )
+    print(full_prompt)
+
+    # Extract and return the response content
+    generated_response = response.choices[0].message.content.strip()
+
+    # Update history in session
+    user_history.append({"role": "user", "content": prompt_textual})
+    user_history.append({"role": "assistant", "content": generated_response})
+    sessiono["history"] = user_history  # Save history in session
+
+    return generated_response
+
+@app.route('/chatbot', methods=['POST'])
+def chatbot_endpoint():
+    """
+    Flask endpoint for the chatbot.
+    """
+    try:
+        # Get the user input from the request
+        user_prompt = request.json.get("prompt")
+        if not user_prompt:
+            return jsonify({"error": "User prompt is required"}), 400
+
+        # Generate response using the helper function
+        bot_response = chatbot_with_memory(user_prompt)
+
+        return jsonify({"response": bot_response}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+
+@app.route('/clear_history', methods=['POST'])
+def clear_history():
+    """
+    Endpoint to clear user interaction history.
+    """
+    global sessiono  # Declare sessiono as global to modify the global variable
+    sessiono = {}  # Clear the global sessiono variable
+    return jsonify({"message": "Chat history cleared successfully."}), 200
 if __name__ == '__main__':
     app.run(debug=True)
 

@@ -27,7 +27,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import json
 
-def upload_to_the_vector_database(paths, model_name, max_tokens, dimensions):
+def upload_to_the_vector_database(paths, model_name, max_tokens, dimensions, index_name_param = "test"):
     """
     Processes and uploads documents to a vector database (Pinecone) for efficient retrieval and similarity search.
 
@@ -138,7 +138,7 @@ def upload_to_the_vector_database(paths, model_name, max_tokens, dimensions):
     
     # Create an instance of ServerlessSpec with the specified cloud provider and region
     spec = ServerlessSpec(cloud="aws", region="us-east-1")
-    index_name = "test"
+    index_name = index_name_param
     # Write data to a Pinecone index 
     embedded_ds.write.pinecone(index_name=index_name, 
         dimensions=dimensions, 
