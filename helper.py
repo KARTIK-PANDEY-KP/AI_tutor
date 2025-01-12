@@ -26,6 +26,10 @@ import PyPDF2
 import pandas as pd
 import matplotlib.pyplot as plt
 import json
+import os
+import base64
+from PIL import Image
+from aryn_sdk.partition import partition_file
 
 def upload_to_the_vector_database(paths, model_name, max_tokens, dimensions, index_name_param = "test"):
     """
@@ -583,7 +587,7 @@ def semantic_parts(client, prompt_textual, semantic_seg_model = "gpt-4o", semant
     using a different temperature setting for diversity.
 
     Parameters:
-        client (object): The API client to generate responses (e.g., OpenAI client).
+        client (object): The API client o generate responses (e.g., OpenAI client).
         context (str): Additional context that might be used for processing.
         user_query (str): The user's query or input.
         prompt_textual (str): The text input for generating the prompt.
@@ -971,41 +975,57 @@ def process_pdf(pdf_path):
     {text}
     """
 
-    data_prompt_template = """
-    Analyze the following paper text and identify any numerical data or trends that can be represented in tabular form. 
-    Generate the data in JSON format with the following structure:
-    [
-      {{"Category": "Category Name", "Value": Numerical Value}},
-      {{"Category": "Category Name", "Value": Numerical Value}}
-    ]
+#     data_prompt_template = """
+#     Analyze the following paper text and identify any numerical data or trends that can be represented in tabular form. 
+#     Generate the data in JSON format with the following structure:
+#     [
+#       {{"Category": "Category Name", "Value": Numerical Value}},
+#       {{"Category": "Category Name", "Value": Numerical Value}}
+#     ]
 
-    Ensure the output is valid JSON. Do not include any text, only JSON, nothing else at all.
-    Paper Text:
-    {text}
-    """
+#     Ensure the output is valid JSON. Do not include any text, only JSON, nothing else at all.
+#     Paper Text:
+#     {text}
+#     """
 
     # Generate summary
     summary = extract_data_with_gpt(pdf_text, summary_prompt_template)
     print("Summary of the PDF:\n", summary)
+    
+#     # Extract numerical data
+#     extracted_data = extract_data_with_gpt(pdf_text, data_prompt_template)
 
-    # Extract numerical data
-    extracted_data = extract_data_with_gpt(pdf_text, data_prompt_template)
+#     # Clean up and parse the JSON output
+#     raw_output = extracted_data.strip()
+#     if raw_output.startswith("```json"):
+#         raw_output = raw_output.strip("```json").strip("```")
 
-    # Clean up and parse the JSON output
-    raw_output = extracted_data.strip()
-    if raw_output.startswith("```json"):
-        raw_output = raw_output.strip("```json").strip("```")
+#     try:
+#         data = json.loads(raw_output)
+#         print("Extracted Data:", data)
+#     except json.JSONDecodeError:
+#         cleaned_output = raw_output.replace("\n", "").strip()
+#         data = json.loads(cleaned_output)
 
-    try:
-        data = json.loads(raw_output)
-        print("Extracted Data:", data)
-    except json.JSONDecodeError:
-        cleaned_output = raw_output.replace("\n", "").strip()
-        data = json.loads(cleaned_output)
+#     # Save visualization
+#     visualize_data(data, output_path="graph.png")
+#     image_base64 = encode_image_to_base64("graph.png")
+    
+    # Replace with your actual API key
+    aryn_api_key = os.getenv("ARYN_API_KEY")
 
-    # Save visualization
-    visualize_data(data, output_path="graph.png")
-    image_base64 = encode_image_to_base64("graph.png")
+    # Open your PDF file
+    with open(pdf_path, 'rb') as file:
+        # Make a call to Aryn DocParse API
+        partitioned_file = partition_file(file, aryn_api_key, extract_images=True, use_ocr=True)
 
-    # Return the summary
+    # Extract images from the partitioned file
+    images = [e for e in partitioned_file['elements'] if e['type'] == 'Image']
+
+    # Print base64 representation of each image
+    for idx, img in enumerate(images):
+        image_base64 = img['binary_representation']
+#         print(f"Image {idx + 1} base64 representation:\n{image_base64}\n")
+        break
+        # Return the summary
     return summary, image_base64
