@@ -617,3 +617,277 @@ def semantic_parts(client, prompt_textual, semantic_seg_model = "gpt-4o", semant
     )
 
     return response.choices[0].message.content
+
+def retrieve_context_ss(index, client, user_query, tokenizer_model_name):
+    """
+    Retrieves relevant context from the Pinecone vector database for a given user query.
+
+    This function:
+    - Generates an embedding for the user query using `generate_embedding`.
+    - Queries the Pinecone vector database using the embedding to find the top-k matching chunks.
+    - Extracts relevant text metadata from the retrieved matches to form the context.
+
+    Parameters:
+    -----------
+    user_query : str
+        The user’s input query for which relevant context is to be retrieved.
+
+    Returns:
+    --------
+    str
+        A concatenated string of relevant text metadata from the top-k matches in the Pinecone vector database.
+
+    Notes:
+    ------
+    - Ensure the Pinecone index is initialized and accessible via the `index` object.
+    - The metadata key `text_representation` should exist in the Pinecone data schema.
+    - Modify `top_k` as needed to adjust the number of results retrieved from the Pinecone database.
+
+    Example Usage:
+    --------------
+    ```python
+    user_query = "What are RNNs used for?"
+    context = retrieve_context(user_query)
+    print(context)
+    ```
+
+    Workflow:
+    ---------
+    1. Generate an embedding for the user query using the `generate_embeddinggenerate_embedding` function.
+    2. Query the Pinecone index for the top-k matching chunks using the query embedding.
+    3. Extract and concatenate relevant text metadata (`text_representation`) from the matches.
+
+    """
+    # Step 1: Generate embedding for the user query
+    query_vector = generate_embedding(client, user_query, tokenizer_model_name)
+    
+    # Step 2: Query Pinecone for relevant matches
+    conn = s2.connect('admin:Ujl3TwqkUOtKnBIBf0RWF6DrLAMtbS9i@svc-9228af81-d01c-4393-abe1-74fcb3b87cf8-dml.aws-oregon-3.svc.singlestore.com:3306/kp')
+
+    # Step 3: Query SingleStore for relevant matches
+    query = """
+    SELECT text_representation, 
+           (1 - (DOT_PRODUCT(embedding, ?) / (L2_NORM(embedding) * L2_NORM(?)))) AS cosine_distance
+    FROM vector_index
+    ORDER BY cosine_distance ASC
+    LIMIT ?;
+    """
+
+    query_vector_list = query_vector.tolist()
+    with conn.cursor() as cursor:
+        cursor.execute(query, (query_vector_list, query_vector_list, top_k))
+        results = cursor.fetchall()
+
+    # Debugging: Print the full response to verify structure
+#     print(response)
+
+    # Step 3: Extract relevant context from metadata
+    # Use 'text_representation' instead of 'text'
+    context = "\n".join([item["metadata"]["text_representation"] for item in response["matches"]])
+    return context
+
+def upload_to_the_vector_database_ss(paths, model_name, max_tokens, dimensions):
+    """
+    Processes and uploads documents to a vector database (Pinecone) for efficient retrieval and similarity search.
+
+    This function:
+    - Extracts text, tables, and images from PDF documents.
+    - Processes and partitions the content into manageable chunks.
+    - Embeds the chunks using an OpenAI embedding model.
+    - Uploads the embedded data to a Pinecone vector database.
+
+    Parameters:
+    -----------
+    paths : list of str
+        A list of file paths to the PDF documents to be processed and uploaded.
+    model_name : str
+        The name of the OpenAI embedding model to be used for generating embeddings (e.g., "text-embedding-ada-002").
+    max_tokens : int
+        The maximum number of tokens per chunk for partitioning and embedding.
+    dimensions : int
+        The dimensionality of the embedding vectors (must match the Pinecone index configuration).
+
+    Process Workflow:
+    -----------------
+    1. **Document Processing**:
+       - Reads and parses the PDF documents.
+       - Extracts tables, text, and images, optionally using OCR for scanned documents.
+       - Splits the content into smaller chunks for efficient embedding.
+    2. **Embedding**:
+       - Embeds each chunk of content using the specified OpenAI embedding model.
+    3. **Uploading to Pinecone**:
+       - Writes the embedded chunks to a Pinecone index.
+       - Ensures the index is configured with the specified dimensionality and cosine distance metric.
+    4. **Verification**:
+       - Queries the Pinecone database to verify the successful upload of document chunks.
+
+    Requirements:
+    -------------
+    - Ensure the Pinecone index is configured and accessible.
+    - Provide a valid OpenAI API key and Pinecone API key via environment variables.
+
+    Notes:
+    ------
+    - The function uses the Sycamore library for efficient ETL (Extract, Transform, Load) operations on documents.
+    - The function assumes the Pinecone index name is "test". Modify `index_name` in the function if a different index name is required.
+
+    Example Usage:
+    --------------
+    ```python
+    upload_to_the_vector_database(
+        paths=["document1.pdf", "document2.pdf"],
+        model_name="text-embedding-ada-002",
+        max_tokens=8191,
+        dimensions=1536
+    )
+    ```
+
+    Output:
+    -------
+    - The function prints a verification output confirming the successful upload of data to the Pinecone vector database.
+
+    """
+    # Initialize the Sycamore context
+    ctx = sycamore.init(ExecMode.LOCAL)
+
+    # Initialize the tokenizer
+    tokenizer = OpenAITokenizer(model_name)
+
+    ds = (
+        ctx.read.binary(paths, binary_format="pdf")
+        # Partition and extract tables and images
+        .partition(partitioner=ArynPartitioner(
+            threshold="auto",
+            use_ocr=True,
+            extract_table_structure=True,
+            extract_images=True,
+            source="docprep"
+        ))
+        # Use materialize to cache output. If changing upstream code or input files, change setting from USE_STORED to RECOMPUTE to create a new cache.
+        .materialize(path="./materialize/partitioned", source_mode=MaterializeSourceMode.RECOMPUTE)
+        # Merge elements into larger chunks
+        .merge(merger=GreedySectionMerger(
+          tokenizer=tokenizer,  max_tokens=max_tokens, merge_across_pages=False
+        ))
+        # Split elements that are too big to embed
+        .split_elements(tokenizer=tokenizer, max_tokens=max_tokens)
+    )
+
+    ds.execute()
+
+    # Display the first 3 pages after chunking
+    # show_pages(ds, limit=3)
+
+    ### seperator ###
+
+    embedded_ds = (
+        # Copy document properties to each Document's sub-elements
+        ds.spread_properties(["path", "entity"])
+        # Convert all Elements to Documents
+        .explode() 
+        # Embed each Document. You can change the embedding model. Make your target vector index matches this number of dimensions.
+        .embed(embedder=OpenAIEmbedder(model_name=model_name))
+    )
+    # To know more about docset transforms, please visit https://sycamore.readthedocs.io/en/latest/sycamore/transforms.html
+
+    ### seperator ###
+
+    #### might need to make a seperate parametrized function for this for now it is here
+    #### NEED TO USE SINGLE SINGLESTORE INSTEAD OF PINECONE -> IMPORTANT TO TARGET SPONSOR PRIZE
+    
+
+
+    # Create an instance of ServerlessSpec with the specified cloud provider and region
+#    spec = ServerlessSpec(cloud="aws", region="us-east-1")
+#   index_name = "test"
+    # Write data to a Pinecone index 
+#    embedded_ds.write.pinecone(index_name=index_name, 
+#        dimensions=dimensions, 
+#        distance_metric="cosine",
+#        index_spec=spec
+#   )
+
+    # Connect to SingleStore database
+    import singlestoredb as s2
+    am = embedding_ds.take_all()
+    # Define dimensions for embeddings (for reference, not used in schema directly)
+    dimensions = 1536  # Example: Number of dimensions for embeddings
+
+    # Create a connection to the database
+    conn = s2.connect('admin:Ujl3TwqkUOtKnBIBf0RWF6DrLAMtbS9i@svc-9228af81-d01c-4393-abe1-74fcb3b87cf8-dml.aws-oregon-3.svc.singlestore.com:3306/kp')
+
+    with conn:
+        with conn.cursor() as cursor:
+            cursor.execute("USE kp;")
+
+            # Check if the connection is open
+            if cursor.is_connected():
+                print("Connection is open")
+
+            cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS vector_index1 (
+                id VARCHAR(255) PRIMARY KEY,          -- Unique ID
+                embedding VECTOR({dimensions}, F32) NOT NULL,  -- Embedding vector
+                path VARCHAR(1024),                   -- Path from metadata
+                filetype VARCHAR(255),                -- Filetype from metadata
+                text LONGTEXT                         -- Text from metadata
+            );
+            """)
+
+
+            print("Table `vector_index` created or verified.")
+
+    import json
+    import uuid
+    import singlestoredb as s2
+
+    # # Prepare data for insertion
+    records = []
+
+    # New Insert
+    for doc in am:
+        # Extracting the unique document ID, or generating a UUID if it's not present
+        unique_id = doc.get('doc_id', str(uuid.uuid4()))
+
+        # Extracting metadata from the 'properties' field
+        metadata = json.dumps({
+            "path": "".join(doc['properties'].get('path', "").split("/")[-1].split(".")),
+            "filetype": doc['properties'].get('filetype', ""),
+            "text": doc.get('text_representation', "").split(":")[-1]
+        }) 
+
+        # Skip documents without embeddings
+        if doc.get('embedding') is None:
+            print(f"Skipping document with path: {unique_id}, embedding is None")
+            continue
+
+    #     Convert embedding string into a list (it appears to be a string representation of a list)
+        embedding = list(doc['embedding'])  # Ensure embedding is a list, use eval safely in controlled environments
+
+        # Append the record to the list of records to be inserted
+        records.append((unique_id, embedding, metadata))
+
+
+    conn = s2.connect('admin:Ujl3TwqkUOtKnBIBf0RWF6DrLAMtbS9i@svc-9228af81-d01c-4393-abe1-74fcb3b87cf8-dml.aws-oregon-3.svc.singlestore.com:3306/kp')
+
+    with conn:
+        with conn.cursor() as cursor:
+            cursor.execute("USE kp;")
+            i = 1
+            for record in records:
+                i = i + 1
+                embedding = record[1]
+                metadata_json = record[2]  # Metadata is a JSON string
+                metadata = json.loads(metadata_json)
+
+                # Extract metadata fields
+                path = metadata.get('path', '')
+                filetype = metadata.get('filetype', '')
+                text = metadata.get('text', '')
+
+                # Insert into the table
+                cursor.execute(f"""
+                    INSERT INTO `vector_index1` (id, embedding, path, filetype, text)
+                    VALUES ({i}, {embedding}, {path}, {filetype}, {text})
+                """)
+            conn.commit()
